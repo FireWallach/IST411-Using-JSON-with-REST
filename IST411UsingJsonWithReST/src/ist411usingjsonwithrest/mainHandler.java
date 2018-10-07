@@ -14,7 +14,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -28,6 +30,7 @@ public class mainHandler implements HttpHandler {
 
     @Override
     public void handle(HttpExchange he) throws IOException {
+        ArrayList<Board> currBoardsList = BoardsList.getInstance().getBoardsList();
         System.out.println("Serving Request");
         Gson gson = new GsonBuilder().create();
         String response = "ERROR";
@@ -45,16 +48,33 @@ public class mainHandler implements HttpHandler {
 
         //GET handling
         if (he.getRequestMethod().equalsIgnoreCase("GET")) {
+            Map<String, String> requestParams = new HashMap<>();
+            if (he.getRequestURI().getQuery() != null) {
+                requestParams = queryToMap(he.getRequestURI().getQuery());
+            }
+            if (requestParams.isEmpty()) {
+                response = gson.toJson(BoardsList.getInstance().getBoardsList());
+                he.sendResponseHeaders(200, response.length());
+            } else if (requestParams.containsKey("title")) {
 
-            response = gson.toJson(BoardsList.getInstance().getBoardsList());
-            he.sendResponseHeaders(200, response.length());
+                for (Board b : currBoardsList) {
+                    if (b.getTitle().equalsIgnoreCase(requestParams.get("title"))) {
+                        response = gson.toJson(b);
+                        he.sendResponseHeaders(200, response.length());
+                    }
+                }
+                if (response.equalsIgnoreCase("ERROR")) {
+                    response = "Board not found.";
+                    he.sendResponseHeaders(404, response.length());
+                }
+            }
 
         }
 
         //POST handling
         if (he.getRequestMethod().equalsIgnoreCase("POST")) {
-            ArrayList currBoardsList = BoardsList.getInstance().getBoardsList();
-            response = "POST POSTED";
+
+            boolean nameExists = false;
 
             int contentLength = Integer.parseInt(requestHeaders.getFirst("Content-length"));
             InputStream inputStream = he.getRequestBody();
@@ -63,9 +83,24 @@ public class mainHandler implements HttpHandler {
             String inJson = new String(cargo, "UTF-8");
 
             Board inBoard = gson.fromJson(inJson, Board.class);
-            currBoardsList.add(inBoard);
 
-            he.sendResponseHeaders(200, response.length());
+            for (Board board : currBoardsList) {
+                if (inBoard.getTitle().equalsIgnoreCase(board.getTitle())) {
+                    nameExists = true;
+                }
+            }
+
+            if (inBoard == null) {
+                response = "Malformed JSON.";
+                he.sendResponseHeaders(400, response.length());
+            } else if (nameExists) {
+                response = "Board with that name already exists";
+                he.sendResponseHeaders(400, response.length());
+            } else {
+                currBoardsList.add(inBoard);
+                response = "Board added.";
+                he.sendResponseHeaders(200, response.length());
+            }
 
         }
 
@@ -73,6 +108,27 @@ public class mainHandler implements HttpHandler {
         OutputStream os = he.getResponseBody();
         os.write(response.getBytes());
         os.close();
+    }
+
+    /**
+     * **************************************************************************************
+     * Title: Get URL parameters using JDK HTTP server Author: Real'sHowTo Date:
+     * 10/07/2018 Code version: 1.0 Availability:
+     * http://www.rgagnon.com/javadetails/java-get-url-parameters-using-jdk-http-server.html
+     * Code used: queryToMap
+     * *************************************************************************************
+     */
+    public static Map<String, String> queryToMap(String query) {
+        Map<String, String> result = new HashMap<>();
+        for (String param : query.split("&")) {
+            String pair[] = param.split("=");
+            if (pair.length > 1) {
+                result.put(pair[0], pair[1]);
+            } else {
+                result.put(pair[0], "");
+            }
+        }
+        return result;
     }
 
 }
